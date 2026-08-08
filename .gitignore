@@ -276,3 +276,5 @@ zz-misc/
 vue-implementation/
 
 news/news.json
+.ecc-hooks-disable
+.ecc-hooks-disable.bak
