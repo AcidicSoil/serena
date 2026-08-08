@@ -23,10 +23,8 @@ def load_external_tool_packages() -> None:
     for entry_point in entry_points(group=EXTERNAL_TOOL_ENTRY_POINT_GROUP):
         tool_package = entry_point.load()
         if not isinstance(tool_package, ModuleType):
-            raise TypeError(
-                f"Serena tool entry point '{entry_point.name}' must resolve to a Python module, "
-                f"got {type(tool_package).__name__}."
-            )
+            actual_type = type(tool_package).__name__
+            raise TypeError(f"Serena tool entry point '{entry_point.name}' must resolve to a Python module, got {actual_type}.")
 
         package_name = tool_package.__name__
         if package_name not in tool_packages:
