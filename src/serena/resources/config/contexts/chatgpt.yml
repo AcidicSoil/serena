@@ -23,10 +23,10 @@ tool_description_overrides:
     Use mode "regex" with wildcards (.*?) to match large sections efficiently: "beginning.*?end" instead of specifying exact content.
     Essential for multi-line replacements.
   replace_in_files: |
-    Replaces a literal or regex pattern across multiple project files. Use dry_run to preview matches and occurrence_ids to apply selected changes. Scope with relative_path/include/exclude globs; expected_count can guard unambiguous bulk replacements.
+    Replaces literal or regex matches across project files. Use dry_run to preview and occurrence_ids to select changes. Scope with path/include/exclude filters.
   search_for_pattern: |
     Searches project files for a regex pattern, with optional path/file filters and surrounding context lines. Prefer symbolic tools when appropriate; use non-greedy patterns to avoid over-matching.
   write_memory: |
     Writes project memory in Markdown for reuse in future tasks. Use a meaningful name; '/' organizes topics. Use the global/ prefix only when explicitly requested. References to other memories may use `mem:name`.
   execute_shell_command: |
-    Executes a short-lived, non-interactive shell command and returns stdout and optional stderr. Runs from the project root unless cwd is provided. Do not use for unsafe commands, servers, or processes requiring user interaction.
+    Runs a short-lived, non-interactive shell command from the project root or cwd and returns its output. Do not use for servers or interactive processes.
