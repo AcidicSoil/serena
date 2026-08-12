@@ -48,6 +48,7 @@ from solidlsp.lsp_protocol_handler.lsp_types import (
     LocationLink,
     RenameParams,
     SymbolInformation,
+    SymbolKind,
 )
 from solidlsp.lsp_protocol_handler.server import (
     LSPError,
@@ -2533,8 +2534,9 @@ class SolidLanguageServer(ABC):
     ) -> ls_types.UnifiedSymbolInformation | None:
         """
         Finds the first symbol containing the position for the given file.
-        For Python, container symbols are considered to be those with kinds corresponding to
-        functions, methods, or classes (typically: Function (12), Method (6), Class (5)).
+        Container symbols are those with kinds corresponding to functions, methods, classes, structs
+        and interfaces, as well as variables and constants (which may be one-liners, e.g. members
+        of a Go ``const`` group).
 
         The method operates as follows:
           - Request the document symbols for the file.
@@ -2546,7 +2548,7 @@ class SolidLanguageServer(ABC):
             among those above the given line.
           - If no container candidates are found, return None.
 
-        :param relative_file_path: The relative path to the Python file.
+        :param relative_file_path: The relative path to the file.
         :param line: The 0-indexed line number.
         :param column: The 0-indexed column (also called character). If not passed, the lookup will be based
             only on the line.
@@ -2589,9 +2591,6 @@ class SolidLanguageServer(ABC):
                 location["relativePath"] = relative_file_path
                 location["uri"] = Path(absolute_file_path).as_uri()
 
-        # Allowed container kinds, currently only for Python
-        container_symbol_kinds = {ls_types.SymbolKind.Method, ls_types.SymbolKind.Function, ls_types.SymbolKind.Class}
-
         def is_position_in_range(line: int, range_d: ls_types.Range) -> bool:
             start = range_d["start"]
             end = range_d["end"]
@@ -2607,14 +2606,15 @@ class SolidLanguageServer(ABC):
                     column_condition = column >= start["character"]
             return line_condition and column_condition
 
+        def is_multiline_container(s):
+            return SymbolKind.is_container(s["kind"]) and s["location"]["range"]["start"]["line"] != s["location"]["range"]["end"]["line"]
+
+        def is_variable_or_constant(s):
+            return s["kind"] in {ls_types.SymbolKind.Variable, ls_types.SymbolKind.Constant}
+
         # Only consider containers that are not one-liners (otherwise we may get imports)
-        candidate_containers = [
-            s
-            for s in document_symbols.iter_symbols()
-            if s["kind"] in container_symbol_kinds and s["location"]["range"]["start"]["line"] != s["location"]["range"]["end"]["line"]
-        ]
-        var_containers = [s for s in document_symbols.iter_symbols() if s["kind"] == ls_types.SymbolKind.Variable]
-        candidate_containers.extend(var_containers)
+        # variables and constants are admitted even as one-liners (e.g. members of a Go const group)
+        candidate_containers = [s for s in document_symbols.iter_symbols() if is_multiline_container(s) or is_variable_or_constant(s)]
 
         if not candidate_containers:
             return None

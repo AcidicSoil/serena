@@ -2,7 +2,17 @@
 
 Status of the `main` branch. Changes prior to the next official version change will appear here.
 
+# v1.7.0 (2026-08-09)
+
 * General:
+  - Fix: Race conditions in ProjectServer when used by multiple clients in parallel   
+  - Fix: `GitignoreParser` interpolated a directory's name unescaped into gitignore pattern position;
+    a directory named with pattern metacharacters (e.g. a stray `***`) could turn a scoped pattern
+    into one matching far more than intended, silently excluding most or all of the project from
+    indexing #1806
+  - Fix: cleanup of an independently-started LSP process and its children required enumerating the
+    system process table (`psutil`), which can be denied even for processes Serena owns in a
+    sandboxed environment; cleanup now signals the known process group directly (#1818)
   - Fix: the README, the Language Support docs page and the project template omitted several already-supported language servers
   - Fix: a tool call exceeding the timeout blocked the task executor indefinitely; the executor now
     recovers without user-induced cancellation
@@ -13,15 +23,25 @@ Status of the `main` branch. Changes prior to the next official version change w
   - Project activation errors are now reported to the client in Serena's system prompt, instead of failures 
     being visible only in the log. This applies both to a failed activation of an explicitly given project and to a 
     failed `--project-from-cwd` auto-detection (#1773).
+  - Enclose sub-prompts in XML-like tags to make scopes explicit
+  - Prompts and prompt templates:
+    - Allow initial project prompts and project-specific newly activated modes to use templating
+    - Support function `embed_memory` in prompt templates to inline a memory's contents
+
+* Security:
   - ProjectServer: Configure trusted hosts (local hosts only) when listening on localhost
   - SerenaDashboardTrayManager: Configure trusted hosts (local hosts only)
+  - Use sandboxed environment for prompt templating, preventing attackers from using custom prompts to
+    execute commands in an uncontrolled manner
 
 * CLI:
   - Fix: `start-mcp-server` help text for `--project-from-cwd` falsely promised a fallback to the CWD, which was 
     removed in v1.0.0 #1773
-  - Fix: `project health-check` always exited with code 0, even when the check failed, so callers 
-    (CI, scripts) could not act on its verdict; it now exits with code 1 on failure. A `find_symbol` 
-    result without any matches is now reported as a failure rather than as a warning.
+  - Improve `project health-check`:
+    - Fix: Process always exited with code 0, even when the check failed, so callers 
+      (CI, scripts) could not act on its verdict; it now exits with code 1 on failure. A `find_symbol` 
+      result without any matches is now reported as a failure rather than as a warning.
+    - Disable symbol groupers, remove flawed pattern search test
 
 * Tools:
   - `find_symbol`, `jet_brains_find_symbol`: Change tool description to improve tool search results in clients that load tools dynamically
@@ -36,9 +56,21 @@ Status of the `main` branch. Changes prior to the next official version change w
       Note that if the base path is itself ignored, ignored paths cannot be considered.
 
 * Language Servers: 
+  - Add Gleam language server support (via the `gleam lsp` server bundled with the Gleam compiler)
   - Allow language server priorities to be configured in `serena_config.yml` (for auto-detection during 
     project creation) 
+  - **Add support for Nextflow** (language server `nextflow`), using the official
+    [Nextflow language server](https://github.com/nextflow-io/language-server); the JAR is downloaded
+    automatically, a Java 17+ runtime is required
   - Add `python_basedpyright` as an alternative Python language server
+  - Java/JDTLS: stop downloading and loading the unused IntelliCode completion-ranking bundle; the retired
+    `intellicode_version`, `intellicode_xmx` and `intellicode_xms` settings remain accepted but are ignored #1821
+  - Kotlin: update the managed Kotlin LSP from `261.13587.0` to `262.9593.0`, including support for the
+    new platform-specific archive layout and Windows ARM64 builds
+  - Add support for Wolfram Language via the official [WolframResearch LSPServer](https://github.com/WolframResearch/LSPServer) paclet.
+    Requires Wolfram Mathematica 13.0+ or Wolfram Engine 12.1+. Set `WOLFRAM_PATH` environment variable or configure
+    `ls_path` in `ls_specific_settings`. Supports .wl and .wls files with diagnostics, document symbols,
+    within-file references, hover documentation, and formatting.
   - Nix/nixd: support custom `ls_path` launchers and external JSON settings through `config_path` #1737
   - Fix: Nix/nixd diagnostics now use published diagnostics instead of the unsupported
     `textDocument/diagnostic` request, which terminated nixd #1802
@@ -65,7 +97,16 @@ Status of the `main` branch. Changes prior to the next official version change w
     or `textDocument/didChange`), as this is always the intention of calling the method.
     If files were kept open in the language server (which the Svelte and Vue language servers did),
     the language server was not necessarily informed about updated contents.
-
+  - Add Deno support (experimental; language server `deno`, backed by the Deno CLI's built-in
+    `deno lsp`). Understands Deno module resolution (`npm:` / `jsr:` / `https:` imports) and the
+    `Deno.*` globals, which the plain TypeScript language server does not. Overlaps TypeScript on
+    file extensions, so it is not auto-detected and must be selected explicitly; requires the
+    `deno` CLI on PATH
+  - Fix: `find_referencing_symbols` reported file-level containers for references located inside Go
+    struct bodies, interface bodies and `const` groups; improve the logic for finding the nearest
+    enclosing symbol, adding the helper function `SymbolKind.is_container` (which is now also
+    applied to identify high-level symbols that should appear in symbol overiews).
+    
 * JetBrains:
   - `jet_brains_find_symbol`: Disallow wildcard-only search, delegating to overview tool if request is for file
 
@@ -83,11 +124,28 @@ Status of the `main` branch. Changes prior to the next official version change w
   - Language servers and their dependency providers now go through the `subprocess_run` helper instead of
     calling `subprocess.run` directly (e.g. for installation processes), so all such subprocesses get 
     `stdin=DEVNULL` and can no longer interfere with the stdio MCP connection #1748
+  - `scala`: Fix: Metals asks via `window/showMessageRequest` whether to import a workspace it has not
+    seen before, and Serena had no handler, so the request failed with `MethodNotFound` and Metals gave
+    up on the import ("Unexpected error initializing server"). No build server was ever connected and
+    every cross-file query fell back to the presentation compiler, which sees one file at a time, unless
+    the project happened to have been imported beforehand by another editor. The three prompts that lead
+    to a build server are now answered; anything else is dismissed, including the choice between several
+    build definitions in one workspace. `ls_specific_settings.scala.auto_import_build: false` opts out
+  - `scala`: Fix: in a repository whose builds live below its root, Metals was given only the repository
+    root as a workspace folder, and its own one-level search takes just the first build it finds — so in
+    a monorepo all but one build were served with no build target, silently returning no cross-file
+    references. The build roots are now detected and passed as workspace folders, one Metals service per
+    build; `ls_specific_settings.scala.project_roots` and `project_root_scan_depth` override the
+    detection #1766
 
 * Dashboard:
   - Fix: Serena PyPI version check triggered by callback on main thread could delay agent startup #1774
-  - Fix: on macOS, the `tray_manager` interface put an icon in the Dock and in the app switcher
-    (should only use menu bar icon)
+  - Improvements in `tray_manager` interface mode:
+    - Fix: on macOS, the `tray_manager` interface put an icon in the Dock and in the app switcher
+      (should only use menu bar icon)
+    - On Serena shutdown, message the tray manager before lengthy project shutdowns
+    - Fix: When dead ports are detected (Serena instance gone), explicitly update the tray menu 
+      immediately (may not update automatically)
   - Use `tray_manager` interface as new default on macOS
 
 * Hooks:
